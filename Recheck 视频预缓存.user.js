@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Recheck 视频预缓存
 // @namespace    http://tampermonkey.net/
-// @version      1.02
+// @version      1.0
 // @description  recheck：预取下一个视频，缓存上限 16 / 512MB，答题后清理
 // @match        https://test.baidu.com/argus/plaza/project/*/recheck/baseQueueId/*/queue/*/pageId/*
 // @grant        unsafeWindow
