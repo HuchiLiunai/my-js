@@ -124,13 +124,21 @@
     }
 
     function computeETA(speed) {
-        if (!speed || speed < 0.5) return null;
-        const t = getToday();
-        const remaining = Number(t.target) - Number(t.actual);
-        if (remaining <= 0) return { done: true };
-        const hours = remaining / speed;
-        return { done: false, hours, eta: new Date(Date.now() + hours * 3600000) };
-    }
+    if (!speed || speed < 0.5) return null;
+
+    const cappedSpeed = Math.min(Number(speed), 175); // speed > 175 时按 175 计算
+
+    const t = getToday();
+    const remaining = Number(t.target) - Number(t.actual);
+    if (remaining <= 0) return { done: true };
+
+    const hours = remaining / cappedSpeed;
+    return {
+        done: false,
+        hours,
+        eta: new Date(Date.now() + hours * 3600000)
+    };
+}
 
     // ============ 面板 UI ============
     const fmt = n => {
