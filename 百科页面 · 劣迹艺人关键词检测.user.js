@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         百科页面 · 劣迹艺人关键词检测
 // @namespace    https://github.com/yourname/ljy-check
-// @version      1.1.1
+// @version      1.2
 // @description  在百科/影视剧介绍页面自动检测是否包含预设的人名关键词，命中即高亮并在右上角提示
 // @author       you
 // @match        *://*/*
@@ -9,9 +9,10 @@
 // @exclude      *://*.feishu.cn/*
 // @exclude      https://test.baidu.com/*
 // @exclude      *://*.deepseek.com/*
+// @exclude      *://www.doubao.com/*
 // @exclude      *://feishu.cn/*
 // @exclude      *://www.kdocs.cn/*
-// @exclude      *://github.com/
+// @exclude      *://github.com/*
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
