@@ -10,6 +10,8 @@
 // @exclude      https://test.baidu.com/*
 // @exclude      *://*.deepseek.com/*
 // @exclude      *://feishu.cn/*
+// @exclude      *://www.kdocs.cn/*
+// @exclude      *://github.com/
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
