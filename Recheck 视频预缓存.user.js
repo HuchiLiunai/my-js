@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Recheck 视频预缓存
 // @namespace    http://tampermonkey.net/
-// @version      1.2
+// @version      1.3
 // @description  recheck：预取下一个视频，缓存上限 16 / 512MB，答题后清理；404/403/410 永久拉黑
 // @match        https://test.baidu.com/argus/plaza/project/*/recheck/baseQueueId/*/queue/*/pageId/*
 // @grant        unsafeWindow
@@ -304,7 +304,222 @@
         const videoUrl = extractVideoUrl(resp.data);
         if (videoUrl) handleVideoActivated(videoUrl);
     }
+        // ============ 复制视频链接：右键菜单 + 快捷键 Alt+C ============
+    const MENU_STYLE_ID = 'rc-ctx-style';
+    const MENU_ID       = 'rc-ctx-menu';
+    const TOAST_ID      = 'rc-toast';
 
+    let ctxMenuEl  = null;
+    let toastTimer = null;
+
+    function ensureMenuStyle() {
+        if (document.getElementById(MENU_STYLE_ID)) return;
+        const parent = document.head || document.documentElement;
+        if (!parent) return;
+        const style = document.createElement('style');
+        style.id = MENU_STYLE_ID;
+        style.textContent = `
+#${MENU_ID}{position:fixed;z-index:2147483647;min-width:180px;padding:6px 0;background:#fff;
+  border:1px solid rgba(0,0,0,.12);border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.18);
+  font:13px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+  color:#333;user-select:none;-webkit-user-select:none;}
+#${MENU_ID} .vc-item{padding:8px 14px;cursor:pointer;white-space:nowrap;display:flex;
+  align-items:center;justify-content:space-between;gap:16px;}
+#${MENU_ID} .vc-item:hover{background:#f0f6ff;color:#1677ff;}
+#${MENU_ID} .vc-item.disabled{color:#c2c2c2;cursor:default;pointer-events:none;}
+#${MENU_ID} .vc-item .vc-kbd{font-size:11px;color:#aaa;}
+#${MENU_ID} .vc-sep{height:1px;margin:5px 0;background:rgba(0,0,0,.08);}
+#${MENU_ID} .vc-tip{padding:4px 14px 6px;font-size:11px;color:#aaa;}
+#${TOAST_ID}{position:fixed;left:50%;top:24px;transform:translateX(-50%);z-index:2147483647;
+  padding:8px 16px;background:rgba(0,0,0,.82);color:#fff;border-radius:6px;
+  font:13px/1.4 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+  pointer-events:none;opacity:0;transition:opacity .18s;}
+#${TOAST_ID}.show{opacity:1;}
+        `;
+        parent.appendChild(style);
+    }
+
+    function showToast(msg) {
+        ensureMenuStyle();
+        if (!document.body) return;
+        let el = document.getElementById(TOAST_ID);
+        if (!el) {
+            el = document.createElement('div');
+            el.id = TOAST_ID;
+            document.body.appendChild(el);
+        }
+        el.textContent = msg;
+        void el.offsetWidth;             // 强制重排，保证连续调用也能淡入
+        el.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => el.classList.remove('show'), 1600);
+    }
+
+    async function copyText(text) {
+        if (!text) return false;
+        try {
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(text);
+                return true;
+            }
+        } catch {}
+        try {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', '');
+            ta.style.cssText = 'position:fixed;top:0;left:-9999px;opacity:0;';
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            ta.setSelectionRange(0, text.length);
+            const ok = document.execCommand('copy');
+            ta.remove();
+            return ok;
+        } catch {
+            return false;
+        }
+    }
+
+    // 从 video 元素还原原始 http(s) 地址（blob: 走 reverse 反查）
+    function resolveOrigUrl(v) {
+        if (!v) return null;
+        let src = v.getAttribute('src') || v.src || '';
+        if (!src) {
+            const s = v.querySelector('source');
+            if (s) src = s.getAttribute('src') || s.src || '';
+        }
+        if (!src) return null;
+        if (src.startsWith('blob:')) return reverse.get(src) || null;
+        return src;
+    }
+
+    function findVideoNear(target) {
+        if (!target || typeof target.closest !== 'function') return null;
+        const v = target.closest('video');
+        if (v) return v;
+        const card = target.closest('[class*="video-card"], [class*="videoCard"], li');
+        if (card) {
+            const cv = card.querySelector('video');
+            if (cv) return cv;
+        }
+        return null;
+    }
+
+    function currentVideoUrl() {
+        const v = document.querySelector('video.vjs-tech') || document.querySelector('video');
+        return resolveOrigUrl(v) || activeUrl || null;
+    }
+
+    function closeCtxMenu() {
+        if (ctxMenuEl) { ctxMenuEl.remove(); ctxMenuEl = null; }
+    }
+
+    function showCtxMenu(x, y, target) {
+        ensureMenuStyle();
+        closeCtxMenu();
+        if (!document.body) return;
+
+        const hoverUrl = resolveOrigUrl(findVideoNear(target));
+        const curUrl   = currentVideoUrl();
+
+        const menu = document.createElement('div');
+        menu.id = MENU_ID;
+
+        const doCopy = async (url) => {
+            if (!url) { showToast('未找到视频链接'); return; }
+            const ok = await copyText(url);
+            showToast(ok ? '已复制视频链接' : '复制失败，请手动复制');
+            if (ok) log('已复制链接', short(url));
+        };
+
+        const addItem = (label, handler, disabled, kbd) => {
+            const item = document.createElement('div');
+            item.className = 'vc-item' + (disabled ? ' disabled' : '');
+            const t = document.createElement('span');
+            t.textContent = label;
+            item.appendChild(t);
+            if (kbd) {
+                const k = document.createElement('span');
+                k.className = 'vc-kbd';
+                k.textContent = kbd;
+                item.appendChild(k);
+            }
+            if (!disabled) {
+                item.addEventListener('click', e => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    closeCtxMenu();
+                    handler();
+                });
+            }
+            menu.appendChild(item);
+        };
+
+        addItem('复制视频链接', () => doCopy(hoverUrl), !hoverUrl);
+        if (curUrl && curUrl !== hoverUrl) {
+            addItem('复制当前播放链接', () => doCopy(curUrl), false);
+        }
+
+        const sep = document.createElement('div');
+        sep.className = 'vc-sep';
+        menu.appendChild(sep);
+
+        const tip = document.createElement('div');
+        tip.className = 'vc-tip';
+        tip.textContent = 'Alt + C 复制当前播放链接';
+        menu.appendChild(tip);
+
+        menu.style.left = '0px';
+        menu.style.top  = '0px';
+        menu.style.visibility = 'hidden';
+        document.body.appendChild(menu);
+
+        const rect = menu.getBoundingClientRect();
+        const left = Math.max(8, Math.min(x, window.innerWidth - rect.width - 8));
+        // 原生菜单一般从光标位置向下展开，自定义菜单放到光标上方错开
+        let top = y - rect.height - 6;
+        if (top < 8) {
+            top = Math.min(y + 14, window.innerHeight - rect.height - 8);
+        }
+        menu.style.left = left + 'px';
+        menu.style.top  = top  + 'px';
+        menu.style.visibility = 'visible';
+
+        ctxMenuEl = menu;
+    }
+
+    function installCopyHelpers() {
+        // 与原生菜单共存：不阻止默认行为 → 两边同时出现
+        window.addEventListener('contextmenu', e => {
+            if (e.shiftKey) return;                 // Shift + 右键 只显示原生菜单
+            if (!document.body) return;
+            showCtxMenu(e.clientX, e.clientY, e.target);
+        }, true);
+
+        // 点击别处 / ESC / 滚动 / 失焦 关闭自定义菜单
+        document.addEventListener('mousedown', e => {
+            if (ctxMenuEl && !ctxMenuEl.contains(e.target)) closeCtxMenu();
+        }, true);
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') closeCtxMenu();
+        }, true);
+        window.addEventListener('blur', closeCtxMenu);
+        window.addEventListener('resize', closeCtxMenu);
+        window.addEventListener('scroll', closeCtxMenu, true);
+
+        // 快捷键 Alt + C：复制当前播放视频链接
+        window.addEventListener('keydown', e => {
+            if (!e.altKey || e.ctrlKey || e.metaKey) return;
+            if (e.code !== 'KeyC' && e.key !== 'c' && e.key !== 'C') return;
+            e.preventDefault();
+            e.stopPropagation();
+            const url = currentVideoUrl();
+            if (!url) { showToast('未找到视频链接'); return; }
+            copyText(url).then(ok => showToast(ok ? '已复制视频链接' : '复制失败，请手动复制'));
+        }, true);
+
+        log('复制助手已就绪：右键菜单 / Alt+C');
+    }
     const origOpen = XMLHttpRequest.prototype.open;
     const origSend = XMLHttpRequest.prototype.send;
     XMLHttpRequest.prototype.open = function (m, u) {
@@ -384,6 +599,7 @@
 
     parseLocation();
     installVideoHooks();
+    installCopyHelpers();
     setInterval(onUrlChange, 300);
 
     // ============ 调试 ============
@@ -419,6 +635,20 @@
             const n = gone.size;
             gone.clear();
             log('已清空永久黑名单:', n);
+        },
+                copyCurrent() {
+            const url = currentVideoUrl();
+            if (!url) { showToast('未找到视频链接'); return Promise.resolve(false); }
+            return copyText(url).then(ok => {
+                showToast(ok ? '已复制视频链接' : '复制失败');
+                return ok;
+            });
+        },
+        copyUrl(url) {
+            return copyText(url).then(ok => {
+                showToast(ok ? '已复制' : '复制失败');
+                return ok;
+            });
         },
     };
 
