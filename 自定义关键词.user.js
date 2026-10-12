@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         自定义关键词
 // @namespace    local.highlight.inject
-// @version      1.3
+// @version      1.4
 // @description  将自定义关键词注入到高亮代码里
 // @match        https://test.baidu.com/argus/*
 // @run-at       document-start
@@ -257,6 +257,24 @@
       }
     }
   }
+
+  // ★ 新增：从 autoVerifyTop 中删除排除词片段
+  function removeExcludedFromAutoVerifyTop(ref) {
+    if (!ref || typeof ref.autoVerifyTop !== "string") return;
+    const parts = ref.autoVerifyTop.split("、").filter(Boolean);
+    const kept = [];
+    for (const part of parts) {
+      // 匹配形如 "国家领导人(让)" 的片段
+      const m = part.match(/^([^(]+)\(([^)]+)\)$/);
+      if (m) {
+        const hit = m[2];
+        // 如果括号内的词是排除词，则丢弃整个片段
+        if (EXCLUDED_WORDS.has(hit)) continue;
+      }
+      kept.push(part);
+    }
+    ref.autoVerifyTop = kept.join("、");
+  }
   // -------- 删除逻辑结束 --------
 
   // gateText：做门禁用的文本。传入空串 = 无门禁时该词必然被跳过（REQUIRE_IN_ASR_TEXT=true 时）
@@ -502,6 +520,7 @@ function handleGetResponse(data) {
     // 1. 删除排除词
     Object.keys(ref).forEach(k => removeExcludedFromTarget(ref[k]));
     removeExcludedFromViolationInfos(ref);
+     removeExcludedFromAutoVerifyTop(ref);   // ★ 新增这一行
 
     // 2. 注入：两种来源分开收集
     const frameHits = [];   // 帧字段来源 → 写 violationInfos
