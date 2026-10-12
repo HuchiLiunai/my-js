@@ -481,7 +481,7 @@
         if (top < 8) {
             top = Math.min(y + 14, window.innerHeight - rect.height - 8);
         }
-        menu.style.left = left + 'px';
+        menu.style.left = left-100 + 'px';
         menu.style.top  = top  + 'px';
         menu.style.visibility = 'visible';
 
