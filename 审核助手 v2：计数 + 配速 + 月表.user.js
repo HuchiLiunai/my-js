@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         审核助手 v2：计数 + 配速 + 月表
 // @namespace    http://tampermonkey.net/
-// @version      2.0
+// @version      2.1
 // @description  verify/recheck 计数，实时配速 + ETA + 进度描边，月表编辑，Home 老板键
 // @match        https://test.baidu.com/argus/*
 // @grant        none
@@ -39,7 +39,10 @@
     let panelVisible  = true;
     let menuOpen      = false;
     let resizeObs     = null;
-
+    // pageId → pageType 缓存（用于识别 SAMPLE 题目）
+    const PAGE_CACHE_MAX = 300;
+    const pageIdToType = new Map();
+    let currentVerifyPageId = null;
     // ============ 工具 ============
     const todayKey = (ts = Date.now()) => {
         const d = new Date(ts);
@@ -94,6 +97,20 @@
 
         refreshUI();
         //console.log(`[AA] +1，今日 ${d[k].actual}`);
+    }
+    // ============ 题目类型缓存 ============
+    function cachePageType(pageId, pageType) {
+        if (pageId == null) return;
+        const k = String(pageId);
+        if (pageIdToType.has(k)) pageIdToType.delete(k);
+        pageIdToType.set(k, pageType || '');
+        while (pageIdToType.size > PAGE_CACHE_MAX) {
+            pageIdToType.delete(pageIdToType.keys().next().value);
+        }
+    }
+    function isSamplePage(pageId) {
+        if (pageId == null) return false;
+        return pageIdToType.get(String(pageId)) === 'SAMPLE';
     }
 
     // ============ 计数 ============
@@ -733,11 +750,40 @@
             }
             return;
         }
+        // 缓存：verify get 单题
+        if (/\/result\/verify\/project\/[^/]+\/base-queue\/[^/]+\/get(\?|$)/.test(url) && resp?.errorCode === 0) {
+            const d = resp.data;
+            if (d && d.pageId != null) {
+                cachePageType(d.pageId, d.pageType);
+                currentVerifyPageId = String(d.pageId);   // 记录当前正在审核的题
+            }
+            return;
+        }
+
+        // 缓存：verify list 批量
+        if (/\/result\/verify\/queue\/\d+\/list(\?|$)/.test(url) && resp?.errorCode === 0) {
+            const list = resp.data && resp.data.pageList;
+            if (Array.isArray(list)) {
+                list.forEach(it => {
+                    if (it && it.pageId != null) cachePageType(it.pageId, it.pageType);
+                });
+            }
+            return;
+        }
         // verify answer
         if (/\/result\/verify\/queue\/\d+\/answer/.test(url) && resp?.errorCode === 0) {
             let p = {};
             try { p = typeof body === 'string' ? JSON.parse(body) : (body || {}); } catch {}
-            if (p.scene !== 'RECHECK') recordEvent();
+
+            if (p.scene !== 'RECHECK') {
+                // ★ SAMPLE 题目不计数
+                const pid = (p.pageId != null) ? String(p.pageId) : currentVerifyPageId;
+                if (pid && isSamplePage(pid)) {
+                    // 调试可保留：console.log('[AA] 跳过 SAMPLE，pageId =', pid);
+                    return;
+                }
+                recordEvent();
+            }
             return;
         }
         // recheck answer
