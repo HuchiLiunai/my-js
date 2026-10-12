@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         视频审核：Blob 缓存加速 v1.4
+// @name         视频审核：Blob 缓存加速
 // @namespace    http://tampermonkey.net/
-// @version      1.4
-// @description  active 独占 + 中断续传；通过/不通过 1 分钟后清缓存；释放降优先级；failed TTL 重试
+// @version      1.5
+// @description  active 独占 + 中断续传；通过/不通过 1 分钟后清缓存；释放降优先级；失败分级 TTL（404/410/403 永久失效，5xx 短退避）；active 失败退避防死循环
 // @match        https://test.baidu.com/argus/*
 // @exclude      https://test.baidu.com/argus/plaza/*/recheck/*
 // @exclude      https://test.baidu.com/argus/plaza/*/appeal/*
@@ -23,7 +23,9 @@
     const AGGRESSIVE_BEHIND  = 3;
     const AGGRESSIVE_WINDOW  = 30 * 1000;
     const PASS_FAIL_TTL      = 60 * 1000;
-    const FAILED_TTL         = 3 * 60 * 1000;
+    const FAILED_TTL         = 3 * 60 * 1000;    // 网络 / 5xx / 超时：可重试
+    const NOT_FOUND_TTL      = 30 * 60 * 1000;   // 404 / 410 / 403：长时间不再碰
+    const ACTIVE_BACKOFF     = 5 * 1000;         // active 失败后的最小退避
     const DEBUG              = true;
 
     const log  = DEBUG ? console.log.bind(console,  '[video-cache]') : () => {};
@@ -34,10 +36,11 @@
     const reverse = new Map();          // blobUrl → origUrl
     const queue   = [];                 // 待下载队列
     const pending = new Set();          // 正在下载
-    const failed  = new Map();          // url → timestamp（带 TTL）
+    const failed  = new Map();          // url → { until, status }
     const downloadStates = new Map();   // url → { chunks, received, controller, ... }
     const pendingCleanup = new Map();   // url → expireAt（通过/不通过 1 分钟后清）
     let aggressiveUntil = 0;            // 激进预加载截止时间
+    let activeRetryTimer = null;        // active 失败退避重试
 
     let downloading = 0;
     let totalSize = 0;
@@ -50,11 +53,14 @@
     const mb    = b => (b / 1024 / 1024).toFixed(2) + 'MB';
 
     function isFailed(url) {
-        if (url === activeUrl) return false;
-        const t = failed.get(url);
-        if (!t) return false;
-        if (Date.now() - t > FAILED_TTL) { failed.delete(url); return false; }
+        const e = failed.get(url);
+        if (!e) return false;
+        if (Date.now() > e.until) { failed.delete(url); return false; }
         return true;
+    }
+
+    function markFailed(url, ttl, status) {
+        failed.set(url, { until: Date.now() + ttl, status: status || 0 });
     }
 
     // ============ 安全撤销 ============
@@ -96,6 +102,19 @@
         }
     }
 
+    // ============ active 失败退避重试 ============
+    function scheduleActiveRetry(url) {
+        clearTimeout(activeRetryTimer);
+        activeRetryTimer = setTimeout(() => {
+            if (activeUrl !== url) return;
+            if (cache.has(url) || pending.has(url)) return;
+            failed.delete(url);
+            if (!queue.includes(url)) queue.unshift(url);
+            log('active 退避结束，重试', short(url));
+            processQueue();
+        }, ACTIVE_BACKOFF + 200);
+    }
+
     // ============ 下载 ============
     async function download(url) {
         if (!url || url.startsWith('blob:')) return;
@@ -135,7 +154,13 @@
                 cache: 'default',
             });
 
-            if (!resp.ok && resp.status !== 206) throw new Error('HTTP ' + resp.status);
+            if (!resp.ok && resp.status !== 206) {
+                // 尽量把 body 消费掉，避免连接悬挂
+                try { await resp.body?.cancel(); } catch {}
+                const err = new Error('HTTP ' + resp.status);
+                err.status = resp.status;
+                throw err;
+            }
 
             if (resp.status === 206) {
                 const cr = resp.headers.get('Content-Range');
@@ -187,6 +212,9 @@
             progressSize -= state.received;
             downloadStates.delete(url);
 
+            // 成功后清掉失败标记（防止旧标记影响后续判断）
+            failed.delete(url);
+
             evictIfNeeded();
             log('完成', short(url), mb(blob.size), ((performance.now() - t0) / 1000).toFixed(1) + 's');
         } catch (e) {
@@ -199,10 +227,28 @@
                     if (!queue.includes(url) && !cache.has(url)) queue.push(url);
                 }
             } else {
-                warn('失败', short(url), e.message);
-                failed.set(url, Date.now());
+                const s = e.status;
+                const isGone = s === 404 || s === 410 || s === 403;
+
+                const ttl = isGone
+                    ? NOT_FOUND_TTL
+                    : (url === activeUrl ? ACTIVE_BACKOFF : FAILED_TTL);
+
+                warn(
+                    '失败',
+                    short(url),
+                    e.message,
+                    isGone ? '(永久失效，冷却 ' + (NOT_FOUND_TTL / 60000) + ' 分钟)' : ''
+                );
+                markFailed(url, ttl, s);
+
                 progressSize -= state.received;
                 downloadStates.delete(url);
+
+                // active 的临时失败：安排一次退避重试
+                if (url === activeUrl && !isGone) {
+                    scheduleActiveRetry(url);
+                }
             }
         } finally {
             downloading--;
@@ -229,7 +275,7 @@
         if (processing) return;
         processing = true;
         try {
-            // 1) active 独占
+            // 1) active 独占（若 active 正处于失败冷却期，则跳过这一步，允许其它任务并发）
             if (activeUrl && !cache.has(activeUrl) && !pending.has(activeUrl) && !isFailed(activeUrl)) {
                 abortNonActive();
                 if (downloading > 0) {
@@ -347,7 +393,6 @@
     function processCleanup(cards) {
         const now = Date.now();
 
-        // 1) 登记新的待清理
         for (const card of cards) {
             const status = getCardStatus(card);
             if (status !== 'pass' && status !== 'fail') continue;
@@ -359,7 +404,6 @@
             log('登记清理', short(url), '60s 后清除');
         }
 
-        // 2) 到期清理
         for (const [url, expireAt] of [...pendingCleanup]) {
             if (now < expireAt) continue;
             pendingCleanup.delete(url);
@@ -376,7 +420,6 @@
         const activeIdx = cards.findIndex(c => c.classList.contains('active'));
         if (activeIdx < 0) return;
 
-        // 1) 更新 activeUrl
         const newActiveUrl = getCardUrl(cards[activeIdx]);
         if (newActiveUrl && newActiveUrl !== activeUrl) {
             activeUrl = newActiveUrl;
@@ -385,21 +428,17 @@
             abortNonActive();
         }
 
-        // 2) 聚合每个 URL 的状态
         const urlStatus = buildUrlStatus(cards);
 
-        // 3) 通过/不通过清理
         processCleanup(cards);
 
-        // 4) 是否激进窗口
         const aggressive = Date.now() < aggressiveUntil;
         const ahead  = aggressive ? AGGRESSIVE_AHEAD  : PRELOAD_AHEAD;
         const behind = aggressive ? AGGRESSIVE_BEHIND : PRELOAD_BEHIND;
 
-        // 5) 构建优先级
-        const activeCards    = [];   // P1~P3
-        const normalPending  = [];   // P4：URL 里有待审（哪怕同时也释放过）
-        const releasedOnly   = [];   // P5：URL 全是释放
+        const activeCards    = [];
+        const normalPending  = [];
+        const releasedOnly   = [];
 
         const pushActive = i => {
             if (i < 0 || i >= cards.length) return;
@@ -418,18 +457,15 @@
             const stat = urlStatus.get(url);
             if (!stat) continue;
 
-            // ★ 关键：hasPending 优先于 hasReleased
             if (stat.hasPending) {
                 if (!normalPending.includes(url)) normalPending.push(url);
             } else if (stat.hasReleased && !stat.hasPassOrFail) {
                 if (!releasedOnly.includes(url)) releasedOnly.push(url);
             }
-            // pass/fail-only 的 URL 不预加载（马上会被清或已被清）
         }
 
         const order = [...activeCards, ...normalPending, ...releasedOnly];
 
-        // 6) 重排队列（不重建，保留已有进度）
         for (let i = order.length - 1; i >= 0; i--) {
             const u = order[i];
             const idx = queue.indexOf(u);
@@ -446,7 +482,6 @@
         const meta = cache.get(url);
         if (meta) {
             if (url === activeUrl) {
-                // 若正在播放此 blob，先切回原始 URL，再撤销
                 const v = document.querySelector('video.vjs-tech') || document.querySelector('video');
                 if (v) {
                     const s = v.getAttribute('src') || v.src;
@@ -499,15 +534,14 @@
         if (!url || typeof url !== 'string') return;
 
         if (/\/result\/verify\/queue\/\d+\/list/.test(url)) {
-            schedulePreload(800, true);   // 激进
+            schedulePreload(800, true);
             return;
         }
         if (/\/project\/\d+\/base\/\d+\/config/.test(url)) {
-            schedulePreload(800, true);   // 激进
+            schedulePreload(800, true);
             return;
         }
         if (/\/result\/(verify|recheck)\/queue\/\d+\/answer/.test(url)) {
-            // 提交前立刻抓住"当前视频"的 src，切题后仍能正确清理
             const v = document.querySelector('video.vjs-tech') || document.querySelector('video');
             let submittedSrc = v && (v.getAttribute('src') || v.src);
             if (submittedSrc && submittedSrc.startsWith('blob:')) {
@@ -610,11 +644,19 @@
                 remainMs: t - Date.now(),
             }));
         },
+        failedList() {
+            return [...failed.entries()].map(([url, e]) => ({
+                url:      short(url),
+                status:   e.status,
+                remainMs: e.until - Date.now(),
+            }));
+        },
         clear() {
             for (const m of cache.values()) URL.revokeObjectURL(m.blobUrl);
             for (const s of downloadStates.values()) {
                 if (s.controller) { try { s.controller.abort(); } catch {} }
             }
+            clearTimeout(activeRetryTimer);
             cache.clear(); reverse.clear(); queue.length = 0;
             pending.clear(); failed.clear(); downloadStates.clear(); pendingCleanup.clear();
             totalSize = 0; progressSize = 0; downloading = 0; activeUrl = null;
@@ -627,5 +669,5 @@
 
     installHooks();
 
-    log('已加载 v1.4。调试：__videoCache__.stats() / .cleanupList()');
+    log('已加载 v1.5。调试：__videoCache__.stats() / .failedList() / .cleanupList()');
 })();
