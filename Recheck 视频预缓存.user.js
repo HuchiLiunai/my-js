@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Recheck 视频预缓存
 // @namespace    http://tampermonkey.net/
-// @version      1.0
-// @description  recheck：预取下一个视频，缓存上限 16 / 512MB，答题后清理
+// @version      1.2
+// @description  recheck：预取下一个视频，缓存上限 16 / 512MB，答题后清理；404/403/410 永久拉黑
 // @match        https://test.baidu.com/argus/plaza/project/*/recheck/baseQueueId/*/queue/*/pageId/*
 // @grant        unsafeWindow
 // @run-at       document-start
@@ -17,19 +17,21 @@
     // ============ 配置 ============
     const MAX_CACHE      = 16;
     const MAX_TOTAL_SIZE = 512 * 1024 * 1024;   // 512MB
-    const FAILED_TTL     = 60 * 1000;
+    const FAILED_TTL     = 60 * 1000;           // 临时失败重试间隔
+    const GONE_STATUS    = new Set([404, 403, 410]);   // 视为永久失效
 
     // ============ 状态 ============
     const cache   = new Map();    // url → { blobUrl, size, ts }
     const reverse = new Map();    // blobUrl → url
-    const pending = new Set();
-    const failed  = new Map();
+    const pending = new Set();    // 正在下载
+    const failed  = new Map();    // 临时失败：url → ts
+    const gone    = new Set();    // 永久失败（404/403/410）：url
 
     let totalSize = 0;
     let activeUrl = null;
     let prefetchInFlight = false;
     let lastPrefetchedResultId = null;
-    let pendingPurgeUrl = null;   // answer 提交后待清理的 url
+    let pendingPurgeUrl = null;
 
     const ctx = {
         projectId: null, baseQueueId: null, queueId: null, pageId: null,
@@ -39,12 +41,34 @@
     const short = u => !u ? '' : (u.length > 90 ? '...' + u.slice(-90) : u);
     const mb    = b => (b / 1024 / 1024).toFixed(2) + 'MB';
 
+    // ============ 失败判定 ============
     function isFailed(url) {
+        if (gone.has(url)) return true;              // ★ 永久失效优先，连 activeUrl 也拦
         if (url === activeUrl) return false;
         const t = failed.get(url);
         if (!t) return false;
         if (Date.now() - t > FAILED_TTL) { failed.delete(url); return false; }
         return true;
+    }
+
+    function markGone(url, status) {
+        if (!url) return;
+        if (gone.has(url)) return;
+        gone.add(url);
+        failed.delete(url);
+        pending.delete(url);
+        if (pendingPurgeUrl === url) pendingPurgeUrl = null;
+        // 顺手清掉可能存在的同 url 缓存
+        const meta = cache.get(url);
+        if (meta) {
+            cache.delete(url);
+            reverse.delete(meta.blobUrl);
+            totalSize -= meta.size;
+            setTimeout(() => {
+                try { URL.revokeObjectURL(meta.blobUrl); } catch {}
+            }, 1000);
+        }
+        log('🚫 永久失效 [' + status + ']，拉黑:', short(url));
     }
 
     // ============ 清理 ============
@@ -58,7 +82,6 @@
         reverse.delete(blobUrl);
         totalSize -= size;
 
-        // 延迟 revoke，避免 video 还没释放引用
         setTimeout(() => {
             try { URL.revokeObjectURL(blobUrl); } catch {}
         }, 1000);
@@ -73,7 +96,6 @@
     function evictIfNeeded() {
         const canEvict = u => u !== activeUrl && u !== pendingPurgeUrl;
 
-        // 1) 按总大小淘汰
         if (totalSize > MAX_TOTAL_SIZE) {
             const entries = [...cache.entries()]
                 .filter(([u]) => canEvict(u))
@@ -83,7 +105,6 @@
                 purgeUrl(url);
             }
         }
-        // 2) 按数量淘汰
         if (cache.size > MAX_CACHE) {
             const entries = [...cache.entries()]
                 .filter(([u]) => canEvict(u))
@@ -98,6 +119,7 @@
     // ============ 下载 ============
     async function download(url) {
         if (!url || url.startsWith('blob:')) return;
+        if (gone.has(url)) return;                     // ★ 已拉黑，直接跳过
         if (cache.has(url) || pending.has(url)) return;
         if (isFailed(url)) return;
 
@@ -107,7 +129,11 @@
 
         try {
             const resp = await fetch(url, { credentials: 'omit', cache: 'default' });
-            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            if (!resp.ok) {
+                const err = new Error('HTTP ' + resp.status);
+                err.status = resp.status;              // ★ 把状态码带出来
+                throw err;
+            }
             const blob = await resp.blob();
             const blobUrl = URL.createObjectURL(blob);
 
@@ -124,8 +150,12 @@
 
             if (url === activeUrl) setTimeout(prefetchNext, 100);
         } catch (e) {
-            warn('❌ 失败:', short(url), e.message);
-            failed.set(url, Date.now());
+            if (e.status && GONE_STATUS.has(e.status)) {
+                markGone(url, e.status);               // ★ 永久失败
+            } else {
+                warn('❌ 临时失败:', short(url), e.message);
+                failed.set(url, Date.now());           // 5xx / 网络错误 → 允许 60s 后重试
+            }
         } finally {
             pending.delete(url);
         }
@@ -163,6 +193,11 @@
                 credentials: 'include',
                 body: JSON.stringify(payload),
             });
+            if (!recResp.ok) {
+                warn('record HTTP ' + recResp.status);
+                lastPrefetchedResultId = capturedResultId;   // ★ 打断死循环
+                return;
+            }
             const recData = await recResp.json();
 
             if (recData.errorCode !== 0 || !recData.data) {
@@ -179,14 +214,30 @@
                 headers: { 'x-requested-with': 'XMLHttpRequest' },
                 credentials: 'include',
             });
+            if (!infoResp.ok) {
+                warn('page_info HTTP ' + infoResp.status);
+                lastPrefetchedResultId = capturedResultId;
+                return;
+            }
             const infoData = await infoResp.json();
 
-            if (infoData.errorCode !== 0 || !infoData.data) return;
+            if (infoData.errorCode !== 0 || !infoData.data) {
+                lastPrefetchedResultId = capturedResultId;
+                return;
+            }
 
             const nextVideoUrl = extractVideoUrl(infoData.data);
-            if (!nextVideoUrl) return;
+            if (!nextVideoUrl) {
+                lastPrefetchedResultId = capturedResultId;
+                return;
+            }
 
             lastPrefetchedResultId = capturedResultId;
+
+            if (gone.has(nextVideoUrl)) {
+                log('🚫 预取目标已拉黑，跳过:', short(nextVideoUrl));
+                return;
+            }
             log('🎬 预取:', short(nextVideoUrl));
             download(nextVideoUrl);
 
@@ -200,11 +251,19 @@
     // ============ video 激活 ============
     function handleVideoActivated(url) {
         if (!url || url.startsWith('blob:')) return;
+
+        // ★ 永久失效：不下载、不重试，让原生 src 自己走（浏览器会显示错误）
+        if (gone.has(url)) {
+            log('🚫 已知永久失效，跳过:', short(url));
+            activeUrl = url;
+            return;
+        }
+
         const wasActive = url === activeUrl;
         activeUrl = url;
         failed.delete(url);
 
-        // ★ answer 过的题，现在有新的 active 了 → 清理旧视频
+        // answer 过的题，现在有新的 active 了 → 清理旧视频
         if (pendingPurgeUrl && pendingPurgeUrl !== url) {
             purgeUrl(pendingPurgeUrl);
             pendingPurgeUrl = null;
@@ -222,7 +281,6 @@
 
     // ============ 网络拦截 ============
     function capture(url, resp) {
-        // answer 提交成功 → 记录当前 activeUrl 待清理
         if (/\/result\/(verify|recheck)\/queue\/\d+\/answer/.test(url)) {
             if (resp && resp.errorCode === 0 && activeUrl) {
                 pendingPurgeUrl = activeUrl;
@@ -337,6 +395,7 @@
             pending:      pending.size,
             active:       short(activeUrl || ''),
             failed:       failed.size,
+            gone:         gone.size,
             pendingPurge: short(pendingPurgeUrl || ''),
             lastPrefetch: lastPrefetchedResultId,
         }),
@@ -345,16 +404,23 @@
             sizeMB: (m.size / 1024 / 1024).toFixed(2),
             age:    ((Date.now() - m.ts) / 1000).toFixed(0) + 's',
         })),
+        goneList: () => [...gone].map(short),
         prefetch: prefetchNext,
         purge:    purgeUrl,
         clear:    () => {
             for (const m of cache.values()) try { URL.revokeObjectURL(m.blobUrl); } catch {}
-            cache.clear(); reverse.clear(); pending.clear(); failed.clear();
+            cache.clear(); reverse.clear(); pending.clear();
+            failed.clear(); gone.clear();
             totalSize = 0; activeUrl = null; pendingPurgeUrl = null;
             lastPrefetchedResultId = null; prefetchInFlight = false;
             log('已清空');
         },
+        clearGone: () => {
+            const n = gone.size;
+            gone.clear();
+            log('已清空永久黑名单:', n);
+        },
     };
 
-    log('已加载。__rc__.stats() / .list()');
+    log('已加载。__rc__.stats() / .list() / .goneList()');
 })();
