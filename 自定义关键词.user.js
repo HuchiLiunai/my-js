@@ -258,20 +258,26 @@
     }
   }
 
-  // ★ 新增：从 autoVerifyTop 中删除排除词片段
+    // ★ 从 autoVerifyTop 中删除排除词（支持 "分组(词1/词2/...)" 格式）
   function removeExcludedFromAutoVerifyTop(ref) {
     if (!ref || typeof ref.autoVerifyTop !== "string") return;
     const parts = ref.autoVerifyTop.split("、").filter(Boolean);
     const kept = [];
     for (const part of parts) {
-      // 匹配形如 "国家领导人(让)" 的片段
+      // 匹配形如 "国家领导人(总理/让)" 的片段
       const m = part.match(/^([^(]+)\(([^)]+)\)$/);
       if (m) {
-        const hit = m[2];
-        // 如果括号内的词是排除词，则丢弃整个片段
-        if (EXCLUDED_WORDS.has(hit)) continue;
+        const group = m[1];
+        const wordsStr = m[2];
+        const words = wordsStr.split("/").map(w => w.trim()).filter(Boolean);
+        // 过滤掉排除词
+        const remaining = words.filter(w => !EXCLUDED_WORDS.has(w));
+        if (remaining.length === 0) continue; // 全部被排除，丢弃整个片段
+        kept.push(`${group}(${remaining.join("/")})`);
+      } else {
+        // 不符合 "分组(词)" 格式的片段，原样保留
+        kept.push(part);
       }
-      kept.push(part);
     }
     ref.autoVerifyTop = kept.join("、");
   }
