@@ -10,9 +10,16 @@
 
 (function () {
     'use strict';
+
+    // ★ 当前地址没有 ? 后面的查询参数 → 直接禁用整个脚本
+    if (!location.search || location.search === '?') {
+        console.log('[rc] 无查询参数，脚本已禁用');
+        return;
+    }
+
     const log  = console.log.bind(console, '[rc]');
-    const warn = console.warn.bind(console, '[rc]');
     const API  = '/argus/api';
+
 
     // ============ 配置 ============
     const MAX_CACHE      = 16;
