@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         默认通过
 // @namespace    http://tampermonkey.net/
-// @version      1.2
+// @version      1.3
 // @description  视频变化时800毫秒后自动点击“通过”按钮；检测到 get 请求时再尝试一次
 // @match        https://test.baidu.com/argus/plaza/project/1/verify/baseQueueId/*
 // @match        https://test.baidu.com/argus/plaza/project/1/recheck/*
@@ -24,18 +24,27 @@
 
     // ---------- 选择“通过” ----------
     function selectPassResult() {
-        const notPassBtn = document.querySelector('.verify-result .btns .no-pass-btn');
-        if (notPassBtn && notPassBtn.classList.contains('active')) {
-            // 若当前选中“不通过”，则跳过，避免冲突
-            console.log('⏭️ 当前已选“不通过”，不自动选择“通过”');
-            return;
-        }
-        const passBtn = document.querySelector('.verify-result .btns .pass-btn');
-        if (passBtn && !passBtn.classList.contains('active')) {
-            passBtn.click();
-            console.log('✅ 已自动选择“通过”');
-        }
+    const notPassBtn = document.querySelector('.verify-result .btns .no-pass-btn');
+    const passBtn = document.querySelector('.verify-result .btns .pass-btn');
+
+    // 如果“不通过”已被选中（有 no-pass 类），则跳过
+    if (notPassBtn && notPassBtn.classList.contains('no-pass')) {
+        console.log('⏭️ 当前已选“不通过”，不自动选择“通过”');
+        return;
     }
+
+    // 如果“通过”已经选中（有 pass 类），也不用再点
+    if (passBtn && passBtn.classList.contains('pass')) {
+        console.log('✅ “通过”已选中，无需操作');
+        return;
+    }
+
+    // 否则点击“通过”
+    if (passBtn) {
+        passBtn.click();
+        console.log('✅ 已自动选择“通过”');
+    }
+}
 
     // ---------- 视频变化回调 ----------
     function onVideoChanged(pageId) {
