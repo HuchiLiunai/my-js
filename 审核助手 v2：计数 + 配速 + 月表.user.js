@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         审核助手 v2：计数 + 配速 + 月表
 // @namespace    http://tampermonkey.net/
-// @version      2.1
+// @version      2.2
 // @description  verify/recheck 计数，实时配速 + ETA + 进度描边，月表编辑，Home 老板键
 // @match        https://test.baidu.com/argus/*
 // @grant        none
@@ -10,7 +10,10 @@
 
 (function () {
     'use strict';
-
+      // ============ 权重配置 ============
+    const WEIGHTED_QUEUE_IDS = new Set([31,32,33,35,36,48,68,71,72,]); // 长视频队列
+    const QUEUE_MULTIPLIER   = 1.5;   // 长视频队列计数 → ×1.5
+    const RECHECK_MULTIPLIER = 1.1;   // RECHECK 场景 → ×1.1
     // ============ 常量 ============
     const DATA_KEY   = 'aa_data_v1';
     const EVENTS_KEY = 'aa_events_v1';
@@ -40,9 +43,6 @@
     let menuOpen      = false;
     let resizeObs     = null;
     // pageId → pageType 缓存（用于识别 SAMPLE 题目）
-    const PAGE_CACHE_MAX = 300;
-    const pageIdToType = new Map();
-    let currentVerifyPageId = null;
     // ============ 工具 ============
     const todayKey = (ts = Date.now()) => {
         const d = new Date(ts);
@@ -83,35 +83,40 @@
         return o.day === todayKey() && Array.isArray(o.events) ? o.events : [];
     };
     const saveEvents = events => saveJSON(EVENTS_KEY, { day: todayKey(), events });
-
-    function recordEvent() {
-        const events = loadEvents();
-        events.push(Date.now());
-        saveEvents(events);
-
-        const d = loadData();
-        const k = todayKey();
-        if (!d[k]) d[k] = { target: 0, actual: 0, note: '' };
-        d[k].actual = round1((Number(d[k].actual) || 0) + 1);
-        saveData(d);
-
-        refreshUI();
-        //console.log(`[AA] +1，今日 ${d[k].actual}`);
+    // 从 URL 里抠出 queueId
+    function getQueueId(url, type /* 'verify' | 'recheck' */) {
+      const re = type === 'recheck'
+          ? /\/result\/recheck\/queue\/(\d+)\/answer/
+          : /\/result\/verify\/queue\/(\d+)\/answer/;
+      const m = String(url || '').match(re);
+      return m ? Number(m[1]) : null;
     }
-    // ============ 题目类型缓存 ============
-    function cachePageType(pageId, pageType) {
-        if (pageId == null) return;
-        const k = String(pageId);
-        if (pageIdToType.has(k)) pageIdToType.delete(k);
-        pageIdToType.set(k, pageType || '');
-        while (pageIdToType.size > PAGE_CACHE_MAX) {
-            pageIdToType.delete(pageIdToType.keys().next().value);
-        }
+
+    // 计算权重
+    function calcDelta(queueId, isRecheck) {
+      let delta = isRecheck ? RECHECK_MULTIPLIER : 1;   // RECHECK 基础 1.1
+      if (queueId != null && WEIGHTED_QUEUE_IDS.has(queueId)) {
+        delta *= QUEUE_MULTIPLIER;                    // 命中高权重队列 ×1.5
+      }
+      return round1(delta);
     }
-    function isSamplePage(pageId) {
-        if (pageId == null) return false;
-        return pageIdToType.get(String(pageId)) === 'SAMPLE';
+    function recordEvent(delta = 1) {
+      delta = round1(delta);
+      if (!(delta > 0)) return;              // ★ 0 或负数不计数（0×1.1 = 0）
+
+      const events = loadEvents();
+      events.push(Date.now());
+      saveEvents(events);
+
+      const d = loadData();
+      const k = todayKey();
+      if (!d[k]) d[k] = { target: 0, actual: 0, note: '' };
+      d[k].actual = round1((Number(d[k].actual) || 0) + delta); // ★ 加 delta 而不是 1
+      saveData(d);
+
+      refreshUI();
     }
+
 
     // ============ 计数 ============
     function getHourCount() {
@@ -312,7 +317,7 @@
         const eEl = panel.querySelector('.aa-eta');
 
         const t = getToday();
-        if (aEl) aEl.textContent = fmt(t.actual);
+        if (aEl) aEl.textContent = String(Math.floor(Number(t.actual) || 0));
         if (hEl) hEl.textContent = String(getHourCount());
 
         const sp = computeSpeed();
@@ -750,54 +755,33 @@
             }
             return;
         }
-        // 缓存：verify get 单题
-        if (/\/result\/verify\/project\/[^/]+\/base-queue\/[^/]+\/get(\?|$)/.test(url) && resp?.errorCode === 0) {
-            const d = resp.data;
-            if (d && d.pageId != null) {
-                cachePageType(d.pageId, d.pageType);
-                currentVerifyPageId = String(d.pageId);   // 记录当前正在审核的题
-            }
-            return;
-        }
-
-        // 缓存：verify list 批量
-        if (/\/result\/verify\/queue\/\d+\/list(\?|$)/.test(url) && resp?.errorCode === 0) {
-            const list = resp.data && resp.data.pageList;
-            if (Array.isArray(list)) {
-                list.forEach(it => {
-                    if (it && it.pageId != null) cachePageType(it.pageId, it.pageType);
-                });
-            }
-            return;
-        }
         // verify answer
-        if (/\/result\/verify\/queue\/\d+\/answer/.test(url) && resp?.errorCode === 0) {
-            let p = {};
-            try { p = typeof body === 'string' ? JSON.parse(body) : (body || {}); } catch {}
+if (/\/result\/verify\/queue\/\d+\/answer/.test(url) && resp?.errorCode === 0) {
+    let p = {};
+    try { p = typeof body === 'string' ? JSON.parse(body) : (body || {}); } catch {}
 
-            if (p.scene !== 'RECHECK') {
-                // ★ SAMPLE 题目不计数
-                const pid = (p.pageId != null) ? String(p.pageId) : currentVerifyPageId;
-                if (pid && isSamplePage(pid)) {
-                    // 调试可保留：console.log('[AA] 跳过 SAMPLE，pageId =', pid);
-                    return;
-                }
-                recordEvent();
-            }
-            return;
-        }
+    if (p.scene !== 'RECHECK') {
+        if (p.pageType === 'SAMPLE') return;   // ★ 直接判 SAMPLE，命中即跳过
+        const queueId = getQueueId(url, 'verify');
+        recordEvent(calcDelta(queueId, false));
+    }
+    return;
+}
+
         // recheck answer
         if (/\/result\/recheck\/queue\/\d+\/answer/.test(url) && resp?.errorCode === 0) {
-            let p = {};
-            try { p = typeof body === 'string' ? JSON.parse(body) : (body || {}); } catch {}
-            if (!lastHistory) return;
-            if (p.pageId && lastHistory.pageId !== p.pageId) return;
-            if (lastHistory.latestUserId === currentUserId) return;
-            recordEvent();
-            // ★ 关键：立刻把自己标记为"最后一次审核者"
-            lastHistory.latestUserId = currentUserId;
-            return;
-        }
+    let p = {};
+    try { p = typeof body === 'string' ? JSON.parse(body) : (body || {}); } catch {}
+    if (!lastHistory) return;
+    if (p.pageId && lastHistory.pageId !== p.pageId) return;
+    if (lastHistory.latestUserId === currentUserId) return;
+
+    const queueId = getQueueId(url, 'recheck');      // ★ 取 queueId
+    recordEvent(calcDelta(queueId, true));           // ★ RECHECK ×1.1（可能再叠加 ×1.5）
+
+    lastHistory.latestUserId = currentUserId;
+    return;
+}
     }
 
     function installHooks() {
