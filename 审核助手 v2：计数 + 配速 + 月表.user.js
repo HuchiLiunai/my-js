@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         审核助手 v2：计数 + 配速 + 月表
 // @namespace    http://tampermonkey.net/
-// @version      2.2
+// @version      2.3
 // @description  verify/recheck 计数，实时配速 + ETA + 进度描边，月表编辑，Home 老板键
 // @match        https://test.baidu.com/argus/*
 // @grant        none
@@ -738,35 +738,30 @@
             currentUserId = resp.data?.id ?? null;
             return;
         }
-        // history
-        if (/\/result\/queue\/\d+\/page\/\d+\/history/.test(url) && resp?.errorCode === 0) {
-            const list = resp.data;
-            if (Array.isArray(list) && list.length) {
-                const sorted = [...list].sort((a, b) => {
-                    const ta = Number(a.currentTime) || Date.parse(a.answerTime) || 0;
-                    const tb = Number(b.currentTime) || Date.parse(b.answerTime) || 0;
-                    return tb - ta;
-                });
-                const latest = sorted[0];
-                lastHistory = {
-                    pageId: latest.pageId,
-                    latestUserId: latest.userId,
-                };
-            }
-            return;
-        }
-        // verify answer
-if (/\/result\/verify\/queue\/\d+\/answer/.test(url) && resp?.errorCode === 0) {
-    let p = {};
-    try { p = typeof body === 'string' ? JSON.parse(body) : (body || {}); } catch {}
+        // 解析 "2026-10-17 06:54:50"（本地时间）
+    const parseAnswerTime = s => {
+        if (!s) return 0;
+        // Safari 不认空格分隔的格式，必须换成 T
+        const t = Date.parse(String(s).replace(' ', 'T'));
+        return Number.isNaN(t) ? 0 : t;
+    };
 
-    if (p.scene !== 'RECHECK') {
-        if (p.pageType === 'SAMPLE') return;   // ★ 直接判 SAMPLE，命中即跳过
-        const queueId = getQueueId(url, 'verify');
-        recordEvent(calcDelta(queueId, false));
+    const sorted = [...list].sort(
+        (a, b) => parseAnswerTime(b.answerTime) - parseAnswerTime(a.answerTime)
+    );
+    const latest = sorted[0];
+            // verify answer
+    if (/\/result\/verify\/queue\/\d+\/answer/.test(url) && resp?.errorCode === 0) {
+        let p = {};
+        try { p = typeof body === 'string' ? JSON.parse(body) : (body || {}); } catch {}
+
+        if (p.scene !== 'RECHECK') {
+            if (p.pageType === 'SAMPLE') return;   // ★ 直接判 SAMPLE，命中即跳过
+            const queueId = getQueueId(url, 'verify');
+            recordEvent(calcDelta(queueId, false));
+        }
+        return;
     }
-    return;
-}
 
         // recheck answer
         if (/\/result\/recheck\/queue\/\d+\/answer/.test(url) && resp?.errorCode === 0) {
