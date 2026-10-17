@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         审核助手 v2：计数 + 配速 + 月表
 // @namespace    http://tampermonkey.net/
-// @version      2.3
+// @version      2.4
 // @description  verify/recheck 计数，实时配速 + ETA + 进度描边，月表编辑，Home 老板键
 // @match        https://test.baidu.com/argus/*
 // @grant        none
@@ -52,7 +52,14 @@
         try { const r = localStorage.getItem(k); return r ? JSON.parse(r) : fb; } catch { return fb; }
     };
     const saveJSON = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
-    const round1   = n => Math.round(n * 10) / 10;
+    // 精度步长：0.05
+    const STEP     = 0.05;
+    // 四舍五入到最近的 0.05，并清掉浮点尾巴（最多 2 位小数）
+    const round1   = n => {
+        const v = Number(n);
+        if (!isFinite(v)) return 0;
+        return Math.round(Math.round(v / STEP) * STEP * 100) / 100;
+    };
 
     // ============ 数据层 ============
     const loadData = () => loadJSON(DATA_KEY, {});
@@ -164,8 +171,9 @@
 
     // ============ 面板 UI ============
     const fmt = n => {
-        const v = Number(n) || 0;
-        return v % 1 === 0 ? String(v) : v.toFixed(1);
+      const v = Number(n) || 0;
+      if (v % 1 === 0) return String(v);
+      return String(parseFloat(v.toFixed(2)));  // 1.65 → "1.65"，1.50 → "1.5"
     };
 
     function updateProgressPath() {
@@ -477,7 +485,7 @@
         const fieldHtml = (id, label, val, hint = '') => `
             <label style="display:block;margin-bottom:12px;">
                 <div style="font-size:12px;color:#666;margin-bottom:4px;">${label}</div>
-                <input id="${id}" type="number" step="0.1" min="0" value="${val}"
+                <input id="${id}" type="number" step="0.05" min="0" value="${val}"
                     style="width:100%;padding:8px 10px;font-size:16px;border:1px solid #ddd;border-radius:6px;box-sizing:border-box;" />
                 ${hint ? `<div style="font-size:11px;color:#999;margin-top:4px;">${hint}</div>` : ''}
             </label>`;
@@ -639,7 +647,7 @@
                 input.maxLength = 256;
             } else {
                 input.type = 'number';
-                input.step = '0.1';
+                input.step = '0.05';
                 input.min = '0';
             }
             input.value = oldText;
