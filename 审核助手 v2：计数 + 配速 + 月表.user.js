@@ -731,25 +731,29 @@
         //console.log('[AA] XML 已导出');
     }
 
-    // ============ 网络拦截 ============
+   // ============ 网络拦截 ============
     function handleResponse(url, body, resp) {
-        // current_user
-        if (/\/user\/current_user/.test(url) && resp?.errorCode === 0) {
-            currentUserId = resp.data?.id ?? null;
-            return;
-        }
-        // 解析 "2026-10-17 06:54:50"（本地时间）
-    const parseAnswerTime = s => {
-        if (!s) return 0;
-        // Safari 不认空格分隔的格式，必须换成 T
-        const t = Date.parse(String(s).replace(' ', 'T'));
-        return Number.isNaN(t) ? 0 : t;
-    };
+    // current_user：记录当前登录用户 ID
+    if (/\/user\/current_user/.test(url) && resp?.errorCode === 0) {
+        currentUserId = resp.data?.id ?? null;
+        console.log('当前用户ID是' + currentUserId);
+        return;
+    }
 
-    const sorted = [...list].sort(
-        (a, b) => parseAnswerTime(b.answerTime) - parseAnswerTime(a.answerTime)
-    );
-    const latest = sorted[0];
+    // history：取响应数组最后一条作为「最新一条审核记录」
+    if (/\/result\/queue\/\d+\/page\/\d+\/history/.test(url) && resp?.errorCode === 0) {
+        const list = resp.data;
+        if (Array.isArray(list) && list.length) {
+            const latest = list[list.length - 1];   // ← 直接取最后一条，不排序
+            lastHistory = {
+                pageId: latest.pageId,
+                latestUserId: latest.userId,
+            };
+            console.log('最新pageId是' + latest.pageId);
+            console.log('最新用户ID是' + latest.userId);
+        }
+        return;
+    }
             // verify answer
     if (/\/result\/verify\/queue\/\d+\/answer/.test(url) && resp?.errorCode === 0) {
         let p = {};
