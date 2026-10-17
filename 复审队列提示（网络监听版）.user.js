@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         复审队列提示（网络监听版）
 // @namespace    http://tampermonkey.net/
-// @version      1.1
-// @description  监听 /result/queue/{qid}/page/{pid}/history/，baseQueueName 命中关键字即提示
+// @version      2.0
+// @description  监听 /argus/api/result/queue/{qid}/page_info，fullQueueName 命中关键字即提示
 // @match        https://test.baidu.com/argus/plaza/project/*/recheck/*
 // @grant        unsafeWindow
 // @run-at       document-start
@@ -12,9 +12,9 @@
     'use strict';
 
     // ---------- 配置 ----------
-    const RE_HISTORY   = /\/result\/queue\/\d+\/page\/\d+\/history/;
-    const KEYWORDS     = ['复审', '交易', 'vvr', '涉黄'];  // 命中任一即提示
-    const MSG_DURATION = 6000;                             // 兜底提示停留时长(ms)
+    const RE_QUEUE_INFO = /\/api\/result\/queue\/\d+\/page_info/;
+    const KEYWORDS      = ['复审', '交易', 'vvr', '涉黄'];  // 命中任一即提示
+    const MSG_DURATION  = 6000;                             // 兜底提示停留时长(ms)
 
     const win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
@@ -94,65 +94,69 @@
         try { return String(input); } catch (e) { return ''; }
     }
 
-    // ========== 核心：解析 history 响应 ==========
-    function handleHistory(json) {
-        const list = json && json.data;
-        if (!Array.isArray(list)) return;
+    // ========== 核心：解析 page_info 响应 ==========
+    function handleQueueInfo(json) {
+        const data = json && json.data;
+        if (!data || typeof data !== 'object') return;
 
-        for (const item of list) {
-            if (!item || !item.baseQueueName) continue;
+        const name = data.fullQueueName;
+        if (!name || typeof name !== 'string') return;
 
-            const hit = KEYWORDS.find(k => item.baseQueueName.includes(k));
-            if (!hit) continue;
+        const hit = KEYWORDS.find(k => name.includes(k));
+        if (!hit) return;
 
-            console.log('🎯 命中关键字:', hit, '| baseQueueName =', item.baseQueueName, '| item =', item);
-            showWarningMessage(`⚠️ 该题目所属队列包含「${hit}」\n${item.baseQueueName}`);
-        }
+        console.log('🎯 命中关键字:', hit,
+                    '| fullQueueName =', name,
+                    '| queueId =', data.queueId,
+                    '| resultId =', data.resultId,
+                    '| data =', data);
+
+        showWarningMessage(`⚠️ 该题目所属队列包含「${hit}」\n${name}`);
     }
 
     // ========== 网络 hook ==========
     function hookNetwork() {
         // ---------- fetch ----------
-        if (win.fetch && !win.fetch.__historyHooked) {
+        if (win.fetch && !win.fetch.__queueInfoHooked) {
             const origFetch = win.fetch;
             win.fetch = function (input, init) {
                 const p = origFetch.apply(this, arguments);
-                if (RE_HISTORY.test(getUrlString(input))) {
+                if (RE_QUEUE_INFO.test(getUrlString(input))) {
                     p.then(r => r.clone().json())
-                     .then(handleHistory)
+                     .then(handleQueueInfo)
                      .catch(() => {});
                 }
                 return p;
             };
-            win.fetch.__historyHooked = true;
+            win.fetch.__queueInfoHooked = true;
         }
 
         // ---------- XHR ----------
         const XHR = win.XMLHttpRequest;
-        if (XHR && XHR.prototype && !XHR.prototype.__historyHooked) {
+        if (XHR && XHR.prototype && !XHR.prototype.__queueInfoHooked) {
             const origOpen = XHR.prototype.open;
             const origSend = XHR.prototype.send;
 
             XHR.prototype.open = function (method, url) {
-                this.__historyUrl = url;
+                this.__queueInfoUrl = url;
                 return origOpen.apply(this, arguments);
             };
 
             XHR.prototype.send = function () {
-                if (RE_HISTORY.test(getUrlString(this.__historyUrl))) {
+                if (RE_QUEUE_INFO.test(getUrlString(this.__queueInfoUrl))) {
                     this.addEventListener('loadend', function () {
                         let json = null;
                         try { json = JSON.parse(this.responseText); } catch (e) {}
-                        handleHistory(json);
+                        handleQueueInfo(json);
                     });
                 }
                 return origSend.apply(this, arguments);
             };
-            XHR.prototype.__historyHooked = true;
+            XHR.prototype.__queueInfoHooked = true;
         }
     }
 
     // ========== 启动 ==========
     hookNetwork();
-    console.log('[History] 监听已启动，关键字：', KEYWORDS.join(' / '));
+    console.log('[QueueInfo] 监听已启动，关键字：', KEYWORDS.join(' / '));
 })();
