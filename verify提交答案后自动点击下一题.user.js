@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name          verify提交答案后自动点击下一题
 // @namespace    http://tampermonkey.net/
-// @version      2.0
+// @version      2.1
 // @description  feedback 200 → 给 active 的相邻卡片打 data-argus-anchor → 3s 内有 verify 就点这个元素；防御同样基于元素
 // @match        https://test.baidu.com/argus/*
 // @exclude      https://test.baidu.com/argus/plaza/*/recheck/*
@@ -63,7 +63,7 @@
         let target = null;
         let mode   = 'next';
         if (activeIdx + 1 < cards.length) {
-            target = cards[activeIdx + 1];
+            target = cards[activeIdx + 0];
         } else if (activeIdx - 1 >= 0) {
             target = cards[activeIdx - 1];
             mode = 'prev';
