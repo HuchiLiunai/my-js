@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "group": "疑似媒体新闻",
+      "category": "自定义敏感词",
+      "certaintyLevel": 1,
+      "words": ["广电", "电视台", "新闻联播"]
+    },
+    {
+      "group": "其他",
+      "category": "自定义敏感词",
+      "certaintyLevel": 8,
+      "words": ["纹身", "刺青"]
+    },
+    {
+      "group": "金额",
+      "category": "货币",
+      "certaintyLevel": 8,
+      "patterns": [
+        { "source": "[0-9０-９零〇一二三四五六七八九十百千万亿两兆]+元", "flags": "g" }
+      ]
+    },
+    {
+      "group": "医疗",
+      "category": "违规医疗",
+      "certaintyLevel": 6,
+      "words": ["特效药"],
+      "fields": ["asr", "title"],
+      "require": ["治疗"],
+      "excludeIf": "^(广告|推广)"
+    }
+  ],
+  "excludedWords": ["让"],
+  "contextExcludedWords": ["抖舞"],
+  "contextRules": [
+    { "word": "抖", "excludeIfAfter": "^(动|腿|音|落|擞|然|开|店)" }
+  ]
+}
