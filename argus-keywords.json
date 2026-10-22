@@ -2869,7 +2869,7 @@
     },
     {
       "word": "拍",
-      "excludeIfBefore":"(直|街|随)$",
+      "excludeIfBefore":"(直|街|随|随手一)$",
       "excludeIfAfter": "^(了拍|照|卖|视频|摄)"
     },
     {
@@ -2879,7 +2879,7 @@
     {
       "word": "群",
       "excludeIfBefore":"(人)$",
-      "excludeIfAfter": "^(人|臣)"
+      "excludeIfAfter": "^(人|臣|山)"
     },
     {
       "word": "第一时间",
