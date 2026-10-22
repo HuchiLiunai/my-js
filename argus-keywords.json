@@ -2929,7 +2929,7 @@
   "contextRules": [
     {
       "word": "抖",
-      "excludeIfAfter": "^(动|腿|落|擞|然|开|舞|抖了抖|得)"
+      "excludeIfAfter": "^(动|腿|落|擞|然|开|舞|了抖|得)"
     },
     {
       "word": "大公",
