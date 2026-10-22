@@ -2892,7 +2892,7 @@
       ]
     }
   ],
-  "excludedwords": [
+  "excludedWords": [
     "让",
     "万里",
     "来客",
@@ -2910,7 +2910,7 @@
     "剪视频",
     "单位名称"
   ],
-  "contextExcludedwords": [
+  "contextExcludedWords": [
     "七彩云南",
     "直拍",
     "拍照",
