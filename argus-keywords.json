@@ -7,9 +7,7 @@
       "certaintyLevel": 8,
       "words": [
         "总书记",
-        "习近平",
-        "總書記",
-        "習近平"
+        "习近平"
       ]
     },
     {
@@ -2908,7 +2906,8 @@
     "ybjiehou@eastmoney.com",
     "宋庆龄",
     "剪视频",
-    "单位名称"
+    "单位名称",
+    "央视频"
   ],
   "contextExcludedWords": [
     "七彩云南",
