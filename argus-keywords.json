@@ -1,10 +1,10 @@
 {
-  "version": 4,
+  "version": 5,
   "rules": [
     {
       "group": "国家领导人",
       "category": "一号非负面",
-      "certaintyLevel": 8,
+      "certaintyLevel": 15,
       "words": [
         "总书记",
         "习近平"
@@ -13,7 +13,7 @@
     {
       "group": "国家领导人",
       "category": "涉政",
-      "certaintyLevel": 8,
+      "certaintyLevel": 14,
       "words": [
         "国务院总理",
         "李强",
@@ -139,7 +139,7 @@
     {
       "group": "重要监管事业单位",
       "category": "媒体新闻",
-      "certaintyLevel": 8,
+      "certaintyLevel": 13,
       "words": [
         "第一财经",
         "东营网络电视台",
@@ -1725,6 +1725,8 @@
         "新华报业",
         "新华国际",
         "新华每日电讯",
+        "新每日电讯",
+        "新年每日电讯",
         "新华日报",
         "新华日报财经",
         "新华日报交汇点",
@@ -1741,7 +1743,7 @@
         "新疆新闻在线",
         "新疆政府",
         "新京报",
-        "新蓝",
+        "新蓝网",
         "新娄底",
         "新民",
         "新民体育",
@@ -2285,15 +2287,17 @@
         "遵义市广播电视台",
         "遵义晚报",
         "遵义网",
-        "左江日报"
+        "左江日报",
+        "总台记者"
       ]
     },
     {
       "group": "敏感事件",
       "category": "敏感事件",
-      "certaintyLevel": 8,
+      "certaintyLevel": 12,
       "words": [
         "犯罪",
+        "抢劫",
         "刑事",
         "死刑",
         "获刑",
@@ -2305,7 +2309,7 @@
     {
       "group": "不当语言",
       "category": "不当语言",
-      "certaintyLevel": 8,
+      "certaintyLevel": 11,
       "words": [
         "傻屌",
         "山驴逼",
@@ -2332,7 +2336,7 @@
     {
       "group": "劣迹艺人",
       "category": "不良导向",
-      "certaintyLevel": 8,
+      "certaintyLevel": 11,
       "words": [
         "PG One",
         "比约克",
@@ -2505,6 +2509,14 @@
       ]
     },
     {
+      "group": "广告",
+      "category": "广告",
+      "certaintyLevel": 8,
+      "words": [
+        "广告"
+      ]
+    },
+    {
       "group": "导流",
       "category": "未授权",
       "certaintyLevel": 7,
@@ -2575,16 +2587,63 @@
         "番茄畅听",
         "汽水",
         "用即梦",
-        "梨视频","Facebook", "Instagram", "Twitter", "Threads", "Snapchat", "Reddit", "LinkedIn", "Pinterest", "Tumblr", "Quora", "Discord", "Telegram", "WhatsApp", "Line", "VK", "Mastodon", "Bluesky","TikTok", "YouTube", "YouTube Shorts", "Instagram Reels", "Triller", "Likee", "Kwai", "Vimeo", "Twitch", "Kick", "Rumble", "Dailymotion"
+        "梨视频",
+        "Facebook",
+        "Instagram",
+        "Twitter",
+        "Threads",
+        "Snapchat",
+        "Reddit",
+        "LinkedIn",
+        "Pinterest",
+        "Tumblr",
+        "Quora",
+        "Discord",
+        "Telegram",
+        "WhatsApp",
+        "Line",
+        "VK",
+        "Mastodon",
+        "Bluesky",
+        "TikTok",
+        "YouTube",
+        "YouTube Shorts",
+        "Instagram Reels",
+        "Triller",
+        "Likee",
+        "Kwai",
+        "Vimeo",
+        "Twitch",
+        "Kick",
+        "Rumble",
+        "Dailymotion"
       ],
       "patterns": [
-    { "source": "知[~～·・\\-—_｜|/／]*乎",       "flags": "g" },
-    { "source": "支[~～·・\\-—_｜|/／]*乎",       "flags": "g" },
-    { "source": "吱[~～·・\\-—_｜|/／]*乎",       "flags": "g" },
-    { "source": "矢口[~～·・\\-—_｜|/／]*乎",     "flags": "g" },
-    { "source": "支[~～·・\\-—_｜|/／]*乎[~～·・\\-—_｜|/／]*嗖", "flags": "g" },
-    { "source": "支[~～·・\\-—_｜|/／]*呼[~～·・\\-—_｜|/／]*嗖", "flags": "g" }
-  ]
+        {
+          "source": "知[~～·・\\-—_｜|/／]*乎",
+          "flags": "g"
+        },
+        {
+          "source": "支[~～·・\\-—_｜|/／]*乎",
+          "flags": "g"
+        },
+        {
+          "source": "吱[~～·・\\-—_｜|/／]*乎",
+          "flags": "g"
+        },
+        {
+          "source": "矢口[~～·・\\-—_｜|/／]*乎",
+          "flags": "g"
+        },
+        {
+          "source": "支[~～·・\\-—_｜|/／]*乎[~～·・\\-—_｜|/／]*嗖",
+          "flags": "g"
+        },
+        {
+          "source": "支[~～·・\\-—_｜|/／]*呼[~～·・\\-—_｜|/／]*嗖",
+          "flags": "g"
+        }
+      ]
     },
     {
       "group": "广告",
@@ -2810,7 +2869,8 @@
         "下一站",
         "中国科学院院士",
         "hi贵州",
-        "南昌晚报"
+        "南昌晚报",
+        "西安发布"
       ]
     },
     {
@@ -2819,11 +2879,11 @@
       "certaintyLevel": 8,
       "patterns": [
         {
-          "source": "[0-9０-９零〇一二三四五六七八九十百千万亿两兆.]+(?:元|块)",
+          "source": "(?<!罚.{0,4})(?<!奖.{0,4})(?<!入)(?<!出)[0-9０-９零〇一二三四五六七八九十百千万亿两兆.]+(?:元|块)",
           "flags": "g"
         },
         {
-          "source": "人均[^0-9０-９零〇一二三四五六七八九十百千万亿两兆]{0,2}[0-9０-９零〇一二三四五六七八九十百千万亿两兆.]+(?:元|块)?",
+          "source": "人均[^0-9０-９零〇一二三四五六七八九十百千万亿两兆几]{0,2}[0-9０-９零〇一二三四五六七八九十百千万亿两兆.]+(?:元|块)?",
           "flags": "g"
         }
       ]
@@ -2849,7 +2909,6 @@
     "央视频",
     "#内容启发搜索",
     "醒目视频"
-    
   ],
   "contextExcludedWords": [
     "七彩云南",
@@ -2857,17 +2916,23 @@
     "works",
     "害群之马",
     "热搜",
-    "陈冲",
     "福利院",
     "留学生",
     "男同学",
     "女同学",
-    "获得物品"
+    "男同事",
+    "女同事",
+    "获得物品",
+    "中国体育彩票",
+    "里根本",
+    "诉求是",
+    "中国网友",
+    "海外网友"
   ],
   "contextRules": [
     {
       "word": "抖",
-      "excludeIfBefore":"(颤|发)$",
+      "excludeIfBefore": "(颤|发)$",
       "excludeIfAfter": "^(动|腿|落|擞|然|开|舞|了抖|得)"
     },
     {
@@ -2884,17 +2949,17 @@
     },
     {
       "word": "拍",
-      "excludeIfBefore":"(直|街|随|随手一|抓)$",
+      "excludeIfBefore": "(直|街|随|随手一|抓|偷)$",
       "excludeIfAfter": "^(了拍|照|卖|视频|摄)"
     },
     {
       "word": "文章",
-      "excludeIfBefore":"(写|写了|发表|篇|多|的|多|好|些|个)$"
+      "excludeIfBefore": "(写|写了|发表|篇|多|的|多|好|些|个|发布|发|发送)$"
     },
     {
       "word": "群",
-      "excludeIfBefore":"(人)$",
-      "excludeIfAfter": "^(人|臣|山)"
+      "excludeIfBefore": "(人)$",
+      "excludeIfAfter": "^(人|臣|山|体|峰)"
     },
     {
       "word": "第一时间",
@@ -2902,19 +2967,27 @@
     },
     {
       "word": "买",
-      "excludeIfBefore":"(收|买)$",
+      "excludeIfBefore": "(收|买|孟)$",
       "excludeIfAfter": "^(醉|单|通|菜|饭)"
     },
     {
       "word": "卖",
-      "excludeIfBefore":"(出)$",
+      "excludeIfBefore": "(出)$",
       "excludeIfAfter": "^(惨)"
     },
     {
       "word": "脱",
-      "excludeIfBefore":"(摆|解|挣)$",
+      "excludeIfBefore": "(摆|解|挣)$",
       "excludeIfAfter": "^(离|贫|困|落)"
     },
-    { "word": "电话", "excludeIfBefore": "火警$" }
+    {
+      "word": "冲",
+      "excludeIfBefore": "(陈|给我)$",
+      "excludeIfAfter": "^(动|出|破|刺|咖啡|奶粉)"
+    },
+    {
+      "word": "电话",
+      "excludeIfBefore": "火警$"
+    }
   ]
 }
