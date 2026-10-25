@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         审核助手：快捷键不通过
 // @namespace    http://tampermonkey.net/
-// @version      2.1
+// @version      2.2
 // @description  快捷键不通过
 // @match        https://test.baidu.com/argus/plaza/project/1/verify/baseQueueId/*
 // @match        https://test.baidu.com/argus/plaza/project/1/recheck/*
@@ -27,8 +27,9 @@
         { key: 'y', ctrl: false, alt: false, shift: false, reason: '随手拍低质',       labels: ['内容低质', '随手拍低质'] },
         { key: 'y', ctrl: false, alt: false, shift: true, reason: '黑边低质',       labels: ['内容低质', '黑边低质'] },
 
-        { key: 'a', ctrl: false, alt: false, shift: false, reason: '低俗性感',         labels: ['涉黄', '低俗性感'] },
-        { key: 's', ctrl: false, alt: false, shift: false, reason: '涉性软色情',       labels: ['涉黄', '涉性软色情'] },
+        { key: 'a', ctrl: false, alt: false, shift: false, reason: '轻度软色情',         labels: ['软色情(新)', '轻度软色情'] },
+        { key: 's', ctrl: false, alt: false, shift: false, reason: '中度软色情',       labels: ['软色情(新)', '中度软色情'] },
+        { key: 's', ctrl: false, alt: false, shift: true, reason: '重度软色情',       labels: ['软色情(新)', '重度软色情'] },
 
         { key: 's', ctrl: false, alt: true , shift: false , reason: '非主流性向',       labels: ['涉黄', '非主流性向'] },
 
