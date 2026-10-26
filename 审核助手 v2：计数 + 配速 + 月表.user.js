@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         审核助手 v2：计数 + 配速 + 月表
 // @namespace    http://tampermonkey.net/
-// @version      2.4
+// @version      2.5
 // @description  verify/recheck 计数，实时配速 + ETA + 进度描边，月表编辑，Home 老板键
 // @match        https://test.baidu.com/argus/*
 // @grant        none
@@ -15,6 +15,7 @@
     const QUEUE_MULTIPLIER   = 1.5;   // 长视频队列计数 → ×1.5
     const RECHECK_MULTIPLIER = 1.1;   // RECHECK 场景 → ×1.1
     // ============ 常量 ============
+    const robotUserIds = [23481280, 23766290, 23457936, 23660189, 23782297, 23717370];//机审Id
     const DATA_KEY   = 'aa_data_v1';
     const EVENTS_KEY = 'aa_events_v1';
     const CONFIG_KEY = 'aa_config_v1';
@@ -782,7 +783,7 @@
     if (!lastHistory) return;
     if (p.pageId && lastHistory.pageId !== p.pageId) return;
     if (lastHistory.latestUserId === currentUserId) return;
-
+    if (!robotUserIds.includes(lastHistory.latestUserId)) return;
     const queueId = getQueueId(url, 'recheck');      // ★ 取 queueId
     recordEvent(calcDelta(queueId, true));           // ★ RECHECK ×1.1（可能再叠加 ×1.5）
 
