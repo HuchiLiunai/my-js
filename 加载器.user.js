@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         加载器
 // @namespace    http://tampermonkey.net/
-// @version      1.1.0
+// @version      1.1.1
 // @match        https://test.baidu.com/argus/plaza/project/1/verify/baseQueueId/*
 // @match        https://test.baidu.com/argus/plaza/project/mt/verify/baseQueueId/*
 // @grant        GM_xmlhttpRequest
@@ -83,6 +83,7 @@
                 method: 'GET',
                 url,
                 timeout: 8000,
+                headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' },
                 onload: r => resolve(r.status === 200 ? r.responseText : null),
                 onerror: () => resolve(null),
                 ontimeout: () => resolve(null),
@@ -117,7 +118,7 @@
             const uid = String((userJson.data && userJson.data.id) || '');
             if (!uid) return;
 
-            const cfgText = await gmFetchText(CONFIG_URL + '?t=' + Date.now());
+            const cfgText = await gmFetchText(CONFIG_URL);
             const config = parseConfig(cfgText);
             if (!config) return;
 
@@ -132,7 +133,7 @@
             if (typeof tw.endHour === 'number' && hour >= tw.endHour) return;
 
             if (!config.coreUrl) return;
-            const coreText = await gmFetchText(config.coreUrl + '?t=' + Date.now());
+            const coreText = await gmFetchText(config.coreUrl);
             if (!coreText || coreText.trim().length < 20) return;
 
             win.__myEnv = {
