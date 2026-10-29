@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         加载器
 // @namespace    http://tampermonkey.net/
-// @version      1.1.1
+// @version      1.3.1
 // @match        https://test.baidu.com/argus/plaza/project/1/verify/baseQueueId/*
 // @match        https://test.baidu.com/argus/plaza/project/mt/verify/baseQueueId/*
 // @grant        GM_xmlhttpRequest
@@ -17,7 +17,7 @@
 
     const REPO = atob('SHVjaGlMaXVuYWkvbXktanM=');
     const XOR_KEY = 'FeFMYP24ajqQPF9OMi2OeXda9wq4o4qC';
-    const CONFIG_URL = `https://cdn.jsdelivr.net/gh/${REPO}@latest/config.enc.js`;
+    const CONFIG_URL = `https://cdn.jsdelivr.net/gh/${REPO}/config.enc.js`;
 
     const win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
