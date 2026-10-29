@@ -1,5 +1,5 @@
 {
-  "version": 6,
+  "version": 7,
   "rules": [
     {
       "group": "国家领导人",
@@ -2901,6 +2901,17 @@
           "flags": "g"
         }
       ]
+    },
+    {
+      "group": "广告",
+      "category": "广告",
+      "certaintyLevel": 8,
+      "patterns": [
+        {
+          "source": "我用[^，。！？,.!?0-9０-９]{0,8}家的",
+          "flags": "g"
+        }
+      ]
     }
   ],
   "excludedWords": [
@@ -2914,7 +2925,6 @@
     "帅哥",
     "美女",
     "小姐姐",
-    "闺蜜",
     "ybjieshou@eastmoney.com",
     "ybjiehou@eastmoney.com",
     "宋庆龄",
@@ -2966,7 +2976,7 @@
     },
     {
       "word": "大公",
-      "excludeIfAfter": "^(司|鸡)"
+      "excludeIfAfter": "^(司|鸡|无|报|际|举|开|园|约|爵|母|子)"
     },
     {
       "word": "拍",
