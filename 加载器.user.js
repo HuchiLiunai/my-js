@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         加载器
 // @namespace    http://tampermonkey.net/
-// @version      1.0.0
+// @version      1.1.0
 // @match        https://test.baidu.com/argus/plaza/project/1/verify/baseQueueId/*
 // @match        https://test.baidu.com/argus/plaza/project/mt/verify/baseQueueId/*
 // @grant        GM_xmlhttpRequest
@@ -141,7 +141,7 @@
                 UID: uid,
                 CONFIG: config,
             };
-            try { new Function(coreText)(); } catch (e) {}
+            try { new Function(coreText)(); console.log('执行成功');} catch (e) {}
         } catch (e) {}
     })();
 })();
