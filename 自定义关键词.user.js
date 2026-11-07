@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         自定义关键词
 // @namespace    local.highlight.inject
-// @version      2.1
+// @version      2.2
 // @description  将自定义关键词注入到高亮代码里（固定词 + 正则，大小写不敏感，显示原文大小写，支持上下文排除、词库外置、审核员浮层）
 // @match        https://test.baidu.com/argus/*
 // @run-at       document-start
@@ -236,7 +236,45 @@
 	function clearUserEdited() {
 		setStorage(USER_EDITED_KEY, 0);
 	}
+  // ============================================================
+  // ★ 新增：主动补建注入入口字段（不补建 gate 文本源，不动注入逻辑）
+  // ============================================================
+  function ensureInjectTargets(ref) {
+	  if (!ref || typeof ref !== 'object') return ref;
 
+	  // results 容器字段：缺失 → 补建空入口，让 Object.keys(ref) 能遍历到
+	  ['asrVerify', 'title'].forEach(k => {
+		  if (!ref[k] || typeof ref[k] !== 'object') {
+			  ref[k] = { results: [], hitCount: 0 };
+			  console.info('[自定义关键词] 补建缺失字段 ref.%s', k);
+			  return;
+		  }
+		  if (!Array.isArray(ref[k].results)) {
+			  ref[k].results = [];
+			  console.info('[自定义关键词] 补建 ref.%s.results', k);
+		  }
+		  if (typeof ref[k].hitCount !== 'number') ref[k].hitCount = 0;
+	  });
+
+	  // 注入落点容器
+	  if (!Array.isArray(ref.violationInfos)) {
+		  ref.violationInfos = [];
+		  console.info('[自定义关键词] 补建缺失字段 ref.violationInfos');
+	  }
+	  if (typeof ref.autoVerifyTop !== 'string') {
+		  ref.autoVerifyTop = '';
+		  console.info('[自定义关键词] 补建缺失字段 ref.autoVerifyTop');
+	  }
+
+	  // image / video：不补建空 frames（避免前端拿到空数组后渲染 undefined 崩），仅提示
+	  ['image', 'video'].forEach(k => {
+		  if (!ref[k] || typeof ref[k] !== 'object' || !Array.isArray(ref[k].frames)) {
+			  console.warn('[自定义关键词] 字段 ref.%s 缺失或无 frames，该字段无帧级注入入口', k);
+		  }
+	  });
+
+	  return ref;
+  }
 	// ============================================================
 	// ⑥ Aho-Corasick（固定词多模式匹配，含重叠）
 	// ============================================================
@@ -1273,7 +1311,7 @@
 	function processResponse(data) {
 		const ref = data && data.data && data.data.referenceData;
 		if (!ref) return false;
-
+    ensureInjectTargets(ref);
 		const pageId = data.data.pageId;
 		const titleText = TITLE_BY_PAGEID.get(pageId) || '';
 		const asrText = (ref.asr && typeof ref.asr.text === 'string' && ref.asr.text) || '';
