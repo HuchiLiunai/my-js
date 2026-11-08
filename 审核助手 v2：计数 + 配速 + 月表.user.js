@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         审核助手 v2：计数 + 配速 + 月表
 // @namespace    http://tampermonkey.net/
-// @version      2.5
-// @description  verify/recheck 计数，实时配速 + ETA + 进度描边，月表编辑，Home 老板键
+// @version      2.6
+// @description  verify/recheck 计数，实时配速 + ETA + 进度描边，月表编辑，Home 老板键，小时提醒
 // @match        https://test.baidu.com/argus/*
 // @grant        none
 // @run-at       document-start
@@ -30,11 +30,15 @@
     const COLOR_RED    = '#f33e3e';
     const COLOR_GREY   = '#b8babf';
 
+    // 本小时做题数提醒阈值
+    const HOUR_ALERT_THRESHOLD = 172;
 
     const DEFAULT_CONFIG = {
         idleGap: 5,           // 空闲阈值（分钟）
         speedWindow: 30,      // 配速窗口（分钟）
         defaultTarget: 1200,  // 默认日目标
+        etaMode: false,       // 到点下班：ETA 改为「到点还能做多少题」
+        etaTime: '19:00',     // 到点下班的目标时间点
     };
 
     // ============ 状态 ============
@@ -123,6 +127,7 @@
       saveData(d);
 
       refreshUI();
+      checkHourAlert();
     }
 
 
@@ -169,6 +174,77 @@
         eta: new Date(Date.now() + hours * 3600000)
     };
 }
+
+    // ============ ETA 到点下班：到指定时间点还能做多少题 ============
+    function computeForecast(speed) {
+        if (!speed || speed <= 0) return null;
+        const cfg = loadConfig();
+        const m = String(cfg.etaTime || '').match(/^(\d{1,2}):(\d{2})$/);
+        if (!m) return null;
+        const hh = Number(m[1]);
+        const mm = Number(m[2]);
+        const now = new Date();
+
+        // 今天的目标时间点
+        let target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hh, mm, 0, 0);
+        const timeStr = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+
+        // 已过 → 顺延到明天同一时刻
+        let dayOffset = 0;
+        if (target.getTime() <= now.getTime()) {
+            target = new Date(target.getTime() + 24 * 3600 * 1000);
+            dayOffset = 1;
+        }
+
+        const diffMs = target.getTime() - now.getTime();
+        const est = Math.round(speed * (diffMs / 3600000));  // 从现在到目标点预计可完成题数
+        return { est, target: timeStr, dayOffset };
+    }
+
+    // ============ 本小时做题数提醒 ============
+    function checkHourAlert() {
+        const count = getHourCount();
+        if (count < HOUR_ALERT_THRESHOLD) return;
+
+        const tag = `${todayKey()}-${new Date().getHours()}`;   // 例如 2026-11-08-14
+        try {
+            if (localStorage.getItem('aa_hour_alert_tag') === tag) return;  // 本小时已提醒过
+            localStorage.setItem('aa_hour_alert_tag', tag);
+        } catch {}
+
+        showHourAlert(count);
+    }
+
+    function showHourAlert(count) {
+        document.getElementById('aa-hour-alert')?.remove();
+
+        const el = document.createElement('div');
+        el.id = 'aa-hour-alert';
+        el.style.cssText = `
+            position: fixed;
+            top: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(245,166,35,0.97);
+            color: #fff;
+            padding: 14px 28px;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            z-index: 99999999;
+            box-shadow: 0 6px 24px rgba(0,0,0,0.25);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+            white-space: nowrap;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.2s;
+        `;
+        el.textContent = `⏰ 本小时已审核 ${count} 题，注意休息`;
+        el.addEventListener('click', () => el.remove());
+        document.body.appendChild(el);
+        requestAnimationFrame(() => { el.style.opacity = '1'; });
+        setTimeout(() => { el.remove(); }, 6000);
+    }
 
     // ============ 面板 UI ============
     const fmt = n => {
@@ -332,21 +408,17 @@
         const sp = computeSpeed();
         if (sEl) sEl.textContent = sp ? `${sp.toFixed(0)}/h` : '--/h';
 
-        const eta = computeETA(sp);
         if (eEl) {
-            if (!eta) eEl.textContent = 'ETA --';
-            else if (eta.done) eEl.textContent = '✅ 已完成';
-            else {
-                const etaMs = Date.now() + Math.round(eta.hours * 60) * 60000;
-                const tt = new Date(etaMs);
-                const now = new Date();
-                const hh = String(tt.getHours()).padStart(2, '0');
-                const mm = String(tt.getMinutes()).padStart(2, '0');
-                let prefix = '';
-                if (tt.toDateString() !== now.toDateString()) {
-                    prefix = `${tt.getMonth() + 1}/${tt.getDate()} `;
-                }
-                eEl.textContent = `ETA ${prefix}${hh}:${mm}`;
+            const cfg = loadConfig();
+            if (cfg.etaMode) {
+              // 预测模式：到指定时间点还能做多少题（已过则顺延到明天）
+              const fc = computeForecast(sp);
+              if (!sp || !fc) {
+                  eEl.textContent = '预计 --';
+              } else {
+                  const prefix = fc.dayOffset ? '明日' : '';
+                  eEl.textContent = `到${prefix}${fc.target}约${fc.est+Math.floor(Number(t.actual) || 0)}题`;
+              }
             }
         }
         updateProgressFill();
@@ -393,6 +465,13 @@
                 <div style="display:flex;align-items:center;justify-content:space-between;">
                     <label>默认目标</label>
                     <div><input type="number" id="aa-cfg-target" min="0" style="width:52px;padding:3px 6px;border:1px solid #ddd;border-radius:4px;font-size:12px;text-align:right;"/></div>
+                </div>
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding-top:10px;border-top:1px dashed #eee;">
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                        <input type="checkbox" id="aa-cfg-etamode" style="width:14px;height:14px;cursor:pointer;"/>
+                        <span>到点下班</span>
+                    </label>
+                    <input type="time" id="aa-cfg-etatime" style="width:100px;padding:2px 4px;border:1px solid #ddd;border-radius:4px;font-size:12px;box-sizing:border-box;"/>
                 </div>
             </div>
         `;
@@ -443,6 +522,27 @@
             c.defaultTarget = Math.max(0, parseInt(e.target.value) || 0);
             saveConfig(c);
             e.target.value = c.defaultTarget;
+        });
+
+        // 到点下班开关 + 目标时间
+        const inEtaMode = menu.querySelector('#aa-cfg-etamode');
+        const inEtaTime = menu.querySelector('#aa-cfg-etatime');
+        inEtaMode.checked = !!cfg.etaMode;
+        inEtaTime.value   = cfg.etaTime || '18:00';
+
+        inEtaMode.addEventListener('change', e => {
+            const c = loadConfig();
+            c.etaMode = !!e.target.checked;
+            saveConfig(c);
+            refreshUI();
+        });
+        inEtaTime.addEventListener('change', e => {
+            const c = loadConfig();
+            const v = String(e.target.value || '').trim();
+            c.etaTime = /^\d{1,2}:\d{2}$/.test(v) ? v : '18:00';
+            saveConfig(c);
+            e.target.value = c.etaTime;
+            refreshUI();
         });
     }
 
