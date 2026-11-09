@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         审核助手 v2：计数 + 配速 + 月表
 // @namespace    http://tampermonkey.net/
-// @version      2.6
+// @version      2.7
 // @description  verify/recheck 计数，实时配速 + ETA + 进度描边，月表编辑，Home 老板键，小时提醒
 // @match        https://test.baidu.com/argus/*
 // @grant        none
@@ -409,18 +409,32 @@
         if (sEl) sEl.textContent = sp ? `${sp.toFixed(0)}/h` : '--/h';
 
         if (eEl) {
-            const cfg = loadConfig();
-            if (cfg.etaMode) {
+          const cfg = loadConfig();
+          eEl.style.color = '#999';
+          if (cfg.etaMode) {
               // 预测模式：到指定时间点还能做多少题（已过则顺延到明天）
               const fc = computeForecast(sp);
               if (!sp || !fc) {
                   eEl.textContent = '预计 --';
               } else {
                   const prefix = fc.dayOffset ? '明日' : '';
-                  eEl.textContent = `到${prefix}${fc.target}约${fc.est+Math.floor(Number(t.actual) || 0)}题`;
+                  eEl.textContent = `到${prefix}${fc.target}约${fc.est + Math.floor(Number(t.actual) || 0)}题`;
               }
-            }
-        }
+          } else {
+              // ★ 普通 ETA 模式：目标完成时间
+              const eta = computeETA(sp);
+              if (!eta) {
+                  eEl.textContent = 'ETA --';
+              } else if (eta.done) {
+                  eEl.textContent = '已完成';
+                  eEl.style.color = COLOR_GOLD;
+              } else {
+                  const hh = String(eta.eta.getHours()).padStart(2, '0');
+                  const mm = String(eta.eta.getMinutes()).padStart(2, '0');
+                  eEl.textContent = `ETA ${hh}:${mm}（剩 ${eta.hours.toFixed(1)}h）`;
+              }
+          }
+      }
         updateProgressFill();
     }
 
